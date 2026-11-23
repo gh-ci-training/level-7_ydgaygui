@@ -1,0 +1,46 @@
+name: Publish candidate
+on:
+  workflow_run:
+    workflows: [Build candidate]
+    types: [completed]
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-candidate
+          path: dist
+          github-token: ${{ github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: candidate-${{ github.event.workflow_run.id }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        run: gh release create "$RELEASE_TAG" dist/program --target "$RELEASE_COMMIT" --title "$RELEASE_TAG" --notes "Automated release candidate"
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Download the published binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: candidate-${{ github.event.workflow_run.id }}
+        run: gh release download "$RELEASE_TAG" --pattern program
+      - name: Verify released binary
+        env:
+          FLAG: ${{ secrets.FLAG }}
+        run: |
+          chmod +x ./program
+          ./program
